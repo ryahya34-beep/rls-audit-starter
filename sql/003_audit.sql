@@ -72,3 +72,50 @@ create trigger tasks_audit
 create trigger profiles_audit
   after insert or update or delete on public.profiles
   for each row execute function private.audit_row();
+
+-- audit_row() is generic: it needs only a uuid `id` column, which teams has.
+create trigger teams_audit
+  after insert or update or delete on public.teams
+  for each row execute function private.audit_row();
+
+-------------------------------------------------------------------------------
+-- Ids never change
+-------------------------------------------------------------------------------
+
+-- The audit log files each row's history under record_id = id. An UPDATE that
+-- changes id would split that history: the old entries point at an id that no
+-- longer exists and the row carries on under a new one with no past. RLS
+-- cannot stop it (a member may update their own team's tasks, every column
+-- included), so this trigger refuses it for everyone, admins included.
+--
+-- A trigger rather than column-level grants: PostgREST upserts send
+-- `set id = excluded.id`, which a column grant would reject even though the id
+-- does not change. Here only a different value is refused.
+-- test/12_record_ids_frozen.sql and mutations m20 to m23 guard this.
+create function private.freeze_id() returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.id is distinct from old.id then
+    raise exception 'the id of a % row cannot be changed', tg_table_name
+      using errcode = '42501',
+            hint = 'The audit log files history under the id. Insert a new row instead.';
+  end if;
+  return new;
+end
+$$;
+
+revoke execute on function private.freeze_id() from public, anon, authenticated;
+
+create trigger tasks_freeze_id
+  before update of id on public.tasks
+  for each row execute function private.freeze_id();
+
+create trigger profiles_freeze_id
+  before update of id on public.profiles
+  for each row execute function private.freeze_id();
+
+create trigger teams_freeze_id
+  before update of id on public.teams
+  for each row execute function private.freeze_id();
