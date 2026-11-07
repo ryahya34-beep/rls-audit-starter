@@ -12,21 +12,21 @@ done properly and proves both with tests:
    write, edit or erase the log, admins included.
 
 The tests do not just pass. A second script breaks the schema on purpose in
-18 different ways and requires the suite to fail every time.
+24 different ways and requires the suite to fail every time.
 
 ```
 $ test/local.sh
 PASS  01_read_isolation (10 checks)
 ...
-11 passed, 0 failed, 69 checks
+13 passed, 0 failed, 87 checks
 
 KILLED    m03_team_move_allowed: tasks UPDATE policy without a real WITH CHECK, so tasks can change team
           caught by: 03_no_cross_team_writes
 ...
-18 of 18 mutations killed
+24 of 24 mutations killed
 ```
 
-No UI, no framework. Under 300 lines of schema SQL, half of it comments, readable in ten minutes.
+No UI, no framework. About 300 lines of schema SQL, half of it comments, readable in ten minutes.
 
 ## Access rules
 
@@ -40,6 +40,7 @@ No UI, no framework. Under 300 lines of schema SQL, half of it comments, readabl
 | Change roles            | no   | no            | no                  | yes   |
 | Read the audit log      | no   | no            | no                  | yes   |
 | Write the audit log     | no   | no            | no                  | no    |
+| Change a row's id       | no   | no            | no                  | no    |
 
 ## Layout
 
@@ -51,7 +52,7 @@ test/shim.sql          the bits of Supabase needed on plain Postgres
 test/helpers.sql       tests.login(), tests.ok(), tests.affected(), tests.throws()
 test/fixture.sql       two teams, four people, three tasks
 test/NN_*.sql          the tests, each inside BEGIN ... ROLLBACK
-test/mutations/        18 deliberate breakages
+test/mutations/        24 deliberate breakages
 test/run.sh            build a fresh database and run the tests
 test/mutation.sh       apply each mutation and require a red suite
 test/local.sh          both of the above on a throwaway local cluster
@@ -134,6 +135,16 @@ behind a green suite.
   `created_by` with `auth.uid()` on insert and freezes it on update. Test 06
   sends a forged author and checks it is ignored, both in the row and in the
   audit log.
+- **A changed id splits the audit history.** The log files each row under its
+  id, and RLS lets a member update every column of their own team's tasks,
+  `id` included. `update tasks set id = gen_random_uuid()` would leave the old
+  history pointing at an id that no longer exists. A trigger refuses a new id
+  on every audited table, for everyone. It is a trigger, not column grants,
+  because PostgREST upserts send `set id = excluded.id` and must keep working.
+  Test 12 covers it and checks that every audited table has the guard.
+- **A new table is easy to forget in the audit.** Test 13 fails if any table in
+  `public` other than `audit_log` lacks the audit trigger, the same way test 10
+  does for RLS.
 
 ## Design notes
 
@@ -159,12 +170,12 @@ behind a green suite.
 
 ## Scope
 
-In: one organisation, teams, three roles, tasks, an audit trail for tasks and
-profiles, tests.
+In: one organisation, teams, three roles, tasks, an audit trail for teams,
+profiles and tasks, tests.
 
 Out, on purpose: a UI, sign-up and invitations (profiles are created by an
-admin), multiple organisations, auditing of `teams`, and log retention. Each is
-a reasonable next step and none changes the patterns above.
+admin), multiple organisations, and log retention. Each is a reasonable next
+step and none changes the patterns above.
 
 ## License
 

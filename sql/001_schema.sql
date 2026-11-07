@@ -32,8 +32,9 @@ create table public.tasks (
 
 create index tasks_team_id_idx on public.tasks (team_id);
 
--- Append-only history of every write to tasks and profiles. Rows are written
--- by a trigger (sql/003_audit.sql), never by clients.
+-- Append-only history of every write to teams, profiles and tasks. Rows are
+-- written by a trigger (sql/003_audit.sql), never by clients. record_id is the
+-- id of the row written, which is why ids cannot change.
 create table public.audit_log (
   id         bigint generated always as identity primary key,
   table_name text not null,
